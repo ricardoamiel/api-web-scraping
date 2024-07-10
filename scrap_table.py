@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import boto3
 import uuid
+import json
 
 def lambda_handler(event, context):
     # URL de la página web que contiene la tabla
@@ -26,15 +27,21 @@ def lambda_handler(event, context):
             'body': 'No se encontró la tabla en la página web'
         }
 
-    # Extraer los encabezados de la tabla
-    headers = [header.text for header in table.find_all('th')]
+    # Extraer los encabezados de la tabla, omitiendo el primero (índice)
+    headers = [header.text.strip() for header in table.find_all('th')[1:]]
 
     # Extraer las filas de la tabla
     rows = []
     for row in table.find_all('tr')[1:]:  # Omitir el encabezado
         cells = row.find_all('td')
-        if len(cells) > 0:
-            rows.append({headers[i]: cell.text for i, cell in enumerate(cells)})
+        index_cell = row.find('th')
+        if len(cells) > 0 and index_cell:  # Verificar que haya celdas y un índice
+            row_data = {'#': index_cell.text.strip()}
+            for i, cell in enumerate(cells):
+                if i < len(headers):
+                    row_data[headers[i]] = cell.text.strip()
+            row_data['id'] = str(uuid.uuid4())  # Generar un ID único para cada entrada
+            rows.append(row_data)
 
     # Guardar los datos en DynamoDB
     dynamodb = boto3.resource('dynamodb')
@@ -52,17 +59,16 @@ def lambda_handler(event, context):
 
     # Insertar los nuevos datos
     for row in rows:
-        row['id'] = str(uuid.uuid4())  # Generar un ID único para cada entrada
         table.put_item(Item=row)
 
     # Construir el resultado
     result = {
-        'headers': headers,
+        'headers': ['#'] + headers,
         'rows': rows
     }
 
     # Retornar el resultado como JSON
     return {
         'statusCode': 200,
-        'body': result
+        'body': json.dumps(result)
     }

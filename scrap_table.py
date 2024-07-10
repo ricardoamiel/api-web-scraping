@@ -26,29 +26,15 @@ def lambda_handler(event, context):
             'body': 'No se encontró la tabla en la página web'
         }
 
-    # Extraer los encabezados de la tabla, omitiendo el primero
-    headers = [header.text.strip() for header in table.find_all('th')[1:]]
-
-    # Mapear los encabezados a los nombres de las columnas en DynamoDB
-    headers_map = {
-        'Nro Parte': 'NroParte',
-        'Fecha y hora': 'FechaYHora',
-        'Dirección / Distrito': 'DireccionDistrito',
-        'Tipo': 'Tipo',
-        'Estado': 'Estado',
-        'Máquinas': 'Maquinas',
-        'Ver Mapa': 'VerMapa'
-    }
+    # Extraer los encabezados de la tabla
+    headers = [header.text for header in table.find_all('th')]
 
     # Extraer las filas de la tabla
     rows = []
     for row in table.find_all('tr')[1:]:  # Omitir el encabezado
-        cells = row.find_all(['td', 'th'])
-        if len(cells) > 1:  # Asegurar que hay más de una celda
-            row_data = {'#': cells[0].text.strip()}
-            row_data.update({headers_map[headers[i]]: cells[i + 1].text.strip() for i in range(len(headers))})
-            row_data['id'] = str(uuid.uuid4())  # Generar un ID único para cada entrada
-            rows.append(row_data)
+        cells = row.find_all('td')
+        if len(cells) > 0:
+            rows.append({headers[i]: cell.text for i, cell in enumerate(cells)})
 
     # Guardar los datos en DynamoDB
     dynamodb = boto3.resource('dynamodb')
@@ -66,11 +52,12 @@ def lambda_handler(event, context):
 
     # Insertar los nuevos datos
     for row in rows:
+        row['id'] = str(uuid.uuid4())  # Generar un ID único para cada entrada
         table.put_item(Item=row)
 
     # Construir el resultado
     result = {
-        'headers': ['#'] + list(headers_map.values()),
+        'headers': headers,
         'rows': rows
     }
 
